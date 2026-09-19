@@ -1,1 +1,19 @@
-{"name":"Solo Table","short_name":"Solo Table","start_url":"./","display":"standalone","background_color":"#17100b","theme_color":"#17100b","orientation":"landscape"}
+{
+  "id": "./",
+  "name": "Solo Table — Card Game",
+  "short_name": "Solo Table",
+  "description": "A quiet tabletop card puzzle for one or two players.",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#10231f",
+  "theme_color": "#10231f",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
