@@ -1,0 +1,5 @@
+export class Input{constructor(renderer,getState,onPlay){this.r=renderer;this.getState=getState;this.onPlay=onPlay;this.id=null;this.moved=false;const c=renderer.canvas;c.addEventListener('pointerdown',e=>this.down(e));c.addEventListener('pointermove',e=>this.move(e));c.addEventListener('pointerup',e=>this.up(e));c.addEventListener('pointercancel',()=>this.cancel());c.addEventListener('pointerleave',e=>{if(this.id)this.move(e)})}
+down(e){if(this.id)return;const id=this.r.pick(e.clientX,e.clientY);const s=this.getState();if(!id||!s.hand.some(c=>c.id===id)||s.paused)return;this.id=id;this.sx=e.clientX;this.sy=e.clientY;this.moved=false;this.r.canvas.setPointerCapture?.(e.pointerId)}
+move(e){if(!this.id)return;this.moved=Math.hypot(e.clientX-this.sx,e.clientY-this.sy)>8;this.r.render(this.getState(),this.id,this.r.tableIndex(e.clientX,this.getState()))}
+up(e){if(!this.id)return;const id=this.id;this.id=null;this.r.canvas.releasePointerCapture?.(e.pointerId);if(this.moved)this.onPlay(id,this.r.tableIndex(e.clientX,this.getState()));else this.r.render(this.getState())}
+cancel(){this.id=null;this.r.render(this.getState())}}
