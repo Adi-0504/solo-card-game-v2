@@ -10,7 +10,8 @@ Static GitHub Pages tabletop card game. No npm, build command, server, or backen
 - Sequence groups: four or more adjacent consecutive numbers
 - Same-number groups: four or more adjacent cards with the same number
 - Completed groups remain as physical 3D cards in the far table area
-- Three completed groups win the round
+- Four completed groups win the round
+- A single rescue set is supplied only after the table becomes genuinely difficult to continue
 - Autosave, pause/resume, sound, haptics, reduced motion, and high-contrast cards
 
 Open `index.html` directly or deploy the repository as a GitHub Pages static site.

@@ -28,7 +28,7 @@
         <div class="home-mark" aria-hidden="true"><span></span><span></span><span></span></div>
         <p class="eyebrow">SOLO CARD GAME</p>
         <h1 id="homeTitle">把數字接起來</h1>
-        <p class="home-subtitle">一張桌子，一副牌，安靜完成三組牌局。</p>
+        <p class="home-subtitle">一張桌子，一副牌，安靜完成四組牌局。</p>
         <div class="home-actions">
           <button class="primary-action" id="homeStartButton" type="button">開始新的一局</button>
           <button class="secondary-action" id="homeContinueButton" type="button">繼續遊玩</button>
@@ -95,7 +95,7 @@
           <div class="rule-row"><b>B</b><div><strong>同點數牌組</strong><span>4 張以上相鄰牌，數字相同。例：9、9、9、9。</span></div></div>
           <div class="rule-row"><b>01</b><div><strong>先建立牌列</strong><span>每張手牌都能放上桌面，先把想完成的牌組排在一起。</span></div></div>
           <div class="rule-row"><b>02</b><div><strong>完成牌組</strong><span>符合 A 或 B 時，牌組會自動移到遠方的完成區。</span></div></div>
-          <div class="rule-row"><b>03</b><div><strong>獲勝條件</strong><span>完成 3 組合法牌組後，立即結束本局並顯示勝利畫面。</span></div></div>
+          <div class="rule-row"><b>03</b><div><strong>獲勝條件</strong><span>完成 4 組合法牌組後，立即結束本局並顯示勝利畫面。</span></div></div>
         </div>
         <button class="primary-action" id="closeRulesButton" type="button">知道了</button>
       </div>
@@ -137,6 +137,8 @@
         <p class="eyebrow" id="resultEyebrow">TABLE COMPLETE</p>
         <h1 id="resultTitle">這一局留在桌上</h1>
         <p class="sheet-note" id="resultNote">你可以看看桌面，或開始新的一局。</p>
+        <div class="result-rule" aria-hidden="true"></div>
+        <div class="result-meta"><span><b id="resultGroups">04</b><small>完成牌組</small></span><span><b id="resultMoves">—</b><small>出牌回合</small></span><span><b id="resultTypes">—</b><small>牌型</small></span></div>
         <div class="sheet-actions">
           <button class="primary-action" id="viewTableButton" type="button">查看桌面</button>
           <button class="secondary-action" id="newGameButton" type="button">新的一局</button>
