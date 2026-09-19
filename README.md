@@ -12,6 +12,7 @@ Static GitHub Pages tabletop card game. No npm, build command, server, or backen
 - Completed groups remain as physical 3D cards in the far table area
 - Four completed groups win the round
 - A single rescue set is supplied only after the table becomes genuinely difficult to continue
+- Two-player local speed race mode compares each player's completion time
 - Autosave, pause/resume, sound, haptics, reduced motion, and high-contrast cards
 
 Open `index.html` directly or deploy the repository as a GitHub Pages static site.

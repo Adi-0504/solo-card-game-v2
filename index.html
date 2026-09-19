@@ -14,6 +14,7 @@
     <button id="pauseButton" class="pause-button" aria-label="Pause game" type="button">
       <span></span><span></span>
     </button>
+    <div id="raceHud" class="race-hud" hidden><span id="racePlayerLabel">玩家 1</span><b id="raceTimer">00:00</b></div>
     <div id="liveRegion" class="sr-only" aria-live="polite"></div>
     <div id="contextHint" class="context-hint" hidden aria-live="polite"></div>
     <nav id="appDock" class="app-dock" aria-label="主要導覽">
@@ -32,6 +33,7 @@
         <div class="home-actions">
           <button class="primary-action" id="homeStartButton" type="button">開始新的一局</button>
           <button class="secondary-action" id="homeContinueButton" type="button">繼續遊玩</button>
+          <button class="secondary-action" id="homeRaceButton" type="button">雙人競速</button>
         </div>
         <div class="home-links">
           <button id="homeFeaturesButton" type="button">功能介紹</button>
@@ -96,6 +98,7 @@
           <div class="rule-row"><b>01</b><div><strong>先建立牌列</strong><span>每張手牌都能放上桌面，先把想完成的牌組排在一起。</span></div></div>
           <div class="rule-row"><b>02</b><div><strong>完成牌組</strong><span>符合 A 或 B 時，牌組會自動移到遠方的完成區。</span></div></div>
           <div class="rule-row"><b>03</b><div><strong>獲勝條件</strong><span>完成 4 組合法牌組後，立即結束本局並顯示勝利畫面。</span></div></div>
+          <div class="rule-row"><b>RACE</b><div><strong>雙人競速</strong><span>兩位玩家各完成一局並計時，總用時較短者獲勝。</span></div></div>
         </div>
         <button class="primary-action" id="closeRulesButton" type="button">知道了</button>
       </div>
@@ -142,6 +145,19 @@
         <div class="sheet-actions">
           <button class="primary-action" id="viewTableButton" type="button">查看桌面</button>
           <button class="secondary-action" id="newGameButton" type="button">新的一局</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="raceHandoffSheet" class="sheet-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="raceHandoffTitle">
+      <div class="sheet race-handoff-sheet">
+        <div class="sheet-grabber"></div>
+        <p class="eyebrow">PASS THE TABLE</p>
+        <h1 id="raceHandoffTitle">玩家 1 完成</h1>
+        <p class="sheet-note" id="raceHandoffNote">用時 00:00。請把裝置交給玩家 2。</p>
+        <div class="sheet-actions">
+          <button class="primary-action" id="nextRacePlayerButton" type="button">玩家 2 開始</button>
+          <button class="secondary-action" id="cancelRaceButton" type="button">結束競速</button>
         </div>
       </div>
     </section>
