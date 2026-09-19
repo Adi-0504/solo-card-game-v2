@@ -1,5 +1,5 @@
-const CACHE_NAME = 'solo-table-v4';
-const APP_SHELL = ['./','./index.html','./app.js','./game.js','./renderer.js','./input.js','./storage.js','./styles.css','./three.min.js','./gsap.min.js','./manifest.webmanifest','./icon.svg','./icon-maskable.svg','./pwa.js'];
+const CACHE_NAME = 'solo-table-v5';
+const APP_SHELL = ['./','./index.html','./app.js?v=7469bc9','./game.js','./renderer.js','./input.js','./storage.js','./styles.css','./three.min.js','./gsap.min.js','./manifest.webmanifest','./icon.svg','./icon-maskable.svg','./pwa.js'];
 
 self.addEventListener('install', event => {
   event.waitUntil(
