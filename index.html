@@ -1,1 +1,151 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"><meta name="theme-color" content="#1b120c"><title>Solo Table</title><link rel="stylesheet" href="./styles.css"></head><body><canvas id="game"></canvas><button id="pause" aria-label="暫停">Ⅱ</button><div id="pauseScreen" hidden><div class="pauseCard"><div>已暫停</div><button id="resume">繼續</button><button id="restart">重新開始</button></div></div><div id="fatal" hidden></div><script type="module" src="./main.js"></script></body></html>
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#10231f" />
+  <meta name="description" content="Solo Card Game — a quiet tabletop card puzzle." />
+  <title>Solo Card Game</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main id="app" aria-label="Solo Card Game">
+    <div id="scene" aria-label="3D tabletop game area"></div>
+    <button id="pauseButton" class="pause-button" aria-label="Pause game" type="button">
+      <span></span><span></span>
+    </button>
+    <div id="liveRegion" class="sr-only" aria-live="polite"></div>
+    <div id="contextHint" class="context-hint" hidden aria-live="polite"></div>
+    <nav id="appDock" class="app-dock" aria-label="主要導覽">
+      <button class="dock-item active" data-view="home" type="button"><span class="dock-icon">⌂</span><span>首頁</span></button>
+      <button class="dock-item" data-view="table" type="button"><span class="dock-icon">▦</span><span>桌面</span></button>
+      <button class="dock-item" data-view="features" type="button"><span class="dock-icon">✦</span><span>功能</span></button>
+      <button class="dock-item" data-view="rules" type="button"><span class="dock-icon">≡</span><span>規則</span></button>
+    </nav>
+
+    <section id="homeSheet" class="home-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="homeTitle">
+      <div class="home-sheet">
+        <div class="home-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <p class="eyebrow">SOLO CARD GAME</p>
+        <h1 id="homeTitle">把數字接起來</h1>
+        <p class="home-subtitle">一張桌子，一副牌，安靜完成三組牌局。</p>
+        <div class="home-actions">
+          <button class="primary-action" id="homeStartButton" type="button">開始新的一局</button>
+          <button class="secondary-action" id="homeContinueButton" type="button">繼續遊玩</button>
+        </div>
+        <div class="home-links">
+          <button id="homeFeaturesButton" type="button">功能介紹</button>
+          <button id="homeRulesButton" type="button">遊戲規則</button>
+        </div>
+        <p class="home-footnote">3–5 分鐘的桌面牌局 · 可隨時暫停</p>
+      </div>
+    </section>
+
+    <section id="introSheet" class="sheet-backdrop intro-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="introTitle">
+      <div class="sheet intro-sheet">
+        <div class="sheet-grabber"></div>
+        <p class="eyebrow">A QUIET TABLETOP GAME</p>
+        <h1 id="introTitle">把數字接起來</h1>
+        <div class="intro-steps">
+          <div><b>01</b><span>從手牌拿起一張牌，放到桌面牌列。</span></div>
+          <div><b>02</b><span>每張牌都可以先放到桌面；連號四張或同點數四張會自動形成一組。</span></div>
+          <div><b>03</b><span>完成三組合法牌組就獲勝；完成的牌組會留在遠處。</span></div>
+        </div>
+        <button class="primary-action" id="startGameButton" type="button">開始遊玩</button>
+      </div>
+    </section>
+
+    <section id="resumeSheet" class="sheet-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="resumeTitle">
+      <div class="sheet">
+        <div class="sheet-grabber"></div>
+        <p class="eyebrow">YOUR TABLE IS READY</p>
+        <h1 id="resumeTitle">繼續這一局？</h1>
+        <p class="sheet-note">桌面上的牌會保留在原位；也可以從一張乾淨的桌面重新開始。</p>
+        <div class="sheet-actions">
+          <button class="primary-action" id="continueSavedButton" type="button">繼續遊玩</button>
+          <button class="secondary-action" id="newSavedGameButton" type="button">新的一局</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="pauseSheet" class="sheet-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="pauseTitle">
+      <div class="sheet">
+        <div class="sheet-grabber"></div>
+        <p class="eyebrow">SOLO CARD GAME</p>
+        <h1 id="pauseTitle">暫停</h1>
+        <p class="sheet-note">桌面會留在原位，隨時可以回來。</p>
+        <div class="sheet-actions">
+          <button class="primary-action" id="resumeButton" type="button">繼續遊玩</button>
+          <button class="secondary-action" id="restartButton" type="button">重新開始</button>
+          <button class="secondary-action" id="settingsButton" type="button">設定</button>
+          <button class="secondary-action" id="rulesButton" type="button">遊戲規則</button>
+          <button class="secondary-action" id="homeButton" type="button">回到首頁</button>
+          <button class="secondary-action" id="exitButton" type="button">離開桌面</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="rulesSheet" class="sheet-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="rulesTitle">
+      <div class="sheet rules-sheet">
+        <div class="sheet-grabber"></div>
+        <p class="eyebrow">HOW TO PLAY</p>
+        <h1 id="rulesTitle">遊戲規則</h1>
+        <div class="rules-list">
+          <div class="rule-row"><b>A</b><div><strong>連號牌組</strong><span>4 張以上相鄰牌，數字連續，花色不限。例：3、4、5、6。</span></div></div>
+          <div class="rule-row"><b>B</b><div><strong>同點數牌組</strong><span>4 張以上相鄰牌，數字相同。例：9、9、9、9。</span></div></div>
+          <div class="rule-row"><b>01</b><div><strong>先建立牌列</strong><span>每張手牌都能放上桌面，先把想完成的牌組排在一起。</span></div></div>
+          <div class="rule-row"><b>02</b><div><strong>完成牌組</strong><span>符合 A 或 B 時，牌組會自動移到遠方的完成區。</span></div></div>
+          <div class="rule-row"><b>03</b><div><strong>獲勝條件</strong><span>完成 3 組合法牌組後，立即結束本局並顯示勝利畫面。</span></div></div>
+        </div>
+        <button class="primary-action" id="closeRulesButton" type="button">知道了</button>
+      </div>
+    </section>
+
+    <section id="featuresSheet" class="sheet-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="featuresTitle">
+      <div class="sheet features-sheet">
+        <div class="sheet-grabber"></div>
+        <p class="eyebrow">THE TABLE IS THE UI</p>
+        <h1 id="featuresTitle">功能介紹</h1>
+        <div class="feature-list">
+          <div class="feature-row"><i>01</i><div><strong>直接拖曳出牌</strong><span>從手牌拿起一張牌，放到桌面牌列想要的位置。</span></div></div>
+          <div class="feature-row"><i>02</i><div><strong>牌組自動完成</strong><span>符合連號或同點數規則時，牌會自己移到遠方完成區。</span></div></div>
+          <div class="feature-row"><i>03</i><div><strong>桌面狀態保留</strong><span>離開、重新整理或暫停後，牌的位置與完成進度都會保存。</span></div></div>
+          <div class="feature-row"><i>04</i><div><strong>觸覺與聲音回饋</strong><span>拿牌、放牌與完成牌組時提供輕量回饋，可在設定中關閉。</span></div></div>
+        </div>
+        <button class="primary-action" id="closeFeaturesButton" type="button">知道了</button>
+      </div>
+    </section>
+
+    <section id="settingsSheet" class="sheet-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="settingsTitle">
+      <div class="sheet">
+        <div class="sheet-grabber"></div>
+        <p class="eyebrow">PREFERENCES</p>
+        <h1 id="settingsTitle">設定</h1>
+        <div class="settings-list">
+          <label class="setting-row"><span>音效</span><input id="soundToggle" type="checkbox" checked /><i></i></label>
+          <label class="setting-row"><span>觸覺回饋</span><input id="hapticsToggle" type="checkbox" checked /><i></i></label>
+          <label class="setting-row"><span>減少動態</span><input id="motionToggle" type="checkbox" /><i></i></label>
+          <label class="setting-row"><span>高對比牌面</span><input id="contrastToggle" type="checkbox" /><i></i></label>
+        </div>
+        <button class="primary-action" id="closeSettingsButton" type="button">完成</button>
+      </div>
+    </section>
+
+    <section id="resultSheet" class="sheet-backdrop result-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="resultTitle">
+      <div class="sheet result-sheet">
+        <div class="sheet-grabber"></div>
+        <p class="eyebrow" id="resultEyebrow">TABLE COMPLETE</p>
+        <h1 id="resultTitle">這一局留在桌上</h1>
+        <p class="sheet-note" id="resultNote">你可以看看桌面，或開始新的一局。</p>
+        <div class="sheet-actions">
+          <button class="primary-action" id="viewTableButton" type="button">查看桌面</button>
+          <button class="secondary-action" id="newGameButton" type="button">新的一局</button>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="./three.min.js"></script>
+  <script src="./gsap.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
