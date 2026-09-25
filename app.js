@@ -30,6 +30,10 @@
   };
   let rng = new RNG();
   function getOnlineWsUrl() {
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      const port = location.port || '8787';
+      return `ws://${location.hostname}:${port}/ws`;
+    }
     let raw = window.SOLO_CARD_GAME_CONFIG?.wsUrl || new URLSearchParams(location.search).get('ws') || '';
     if (!raw && (location.protocol === 'http:' || location.protocol === 'https:')) {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -40,6 +44,10 @@
     if (raw.startsWith('http://') || raw.startsWith('https://')) {
       try {
         const u = new URL(raw);
+        if (u.hostname.endsWith('github.io')) {
+          const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          return `${proto}//${location.host}/ws`;
+        }
         const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
         const path = u.pathname.endsWith('/ws') ? u.pathname : `${u.pathname.replace(/\/$/, '')}/ws`;
         return `${proto}//${u.host}${path}`;
@@ -205,7 +213,13 @@
   }
   function connectOnline(){
     const wsUrl = getOnlineWsUrl();
-    if(!wsUrl){onlineConfigNote.textContent='尚未設定 WebSocket 伺服器。請在 config.js 填入 wss:// 位址；GitHub Pages 仍可使用本機模式。';onlineConfigNote.hidden=false;return;}
+    const isGithubStatic = location.hostname.endsWith('github.io') && !window.SOLO_CARD_GAME_CONFIG?.wsUrl && !new URLSearchParams(location.search).get('ws');
+    if(!wsUrl || isGithubStatic){
+      onlineConfigNote.textContent='GitHub Pages 為靜態網站。跨裝置線上對戰請在 config.js 填入已部署的 wss:// 後端伺服器網址，或於網址加上 ?ws=wss://...';
+      onlineConfigNote.hidden=false;
+      setOnlineStatus('未連接線上伺服器（請設定 wss:// 後端位址）');
+      return;
+    }
     onlineConfigNote.hidden=true;
     if(onlineSocket&&(onlineSocket.readyState===WebSocket.OPEN||onlineSocket.readyState===WebSocket.CONNECTING))return;
     setOnlineStatus('正在連接線上桌面…'); onlineSocket=new WebSocket(wsUrl);
@@ -317,21 +331,51 @@
   document.getElementById('closeFeaturesButton').onclick=()=>{featuresSheet.hidden=true;homeSheet.hidden=false;};
   document.getElementById('createOnlineRoomButton').onclick=()=>{if(!getOnlineWsUrl()){openOnline();setOnlineStatus('尚未設定 WebSocket 伺服器。請在 config.js 填入 wss:// 位址。');return;}busy=true;sendOnline({type:'CREATE_ROOM'});};
   document.getElementById('joinOnlineRoomButton').onclick=()=>{const code=document.getElementById('onlineRoomInput').value.trim().toUpperCase();if(!code){setOnlineStatus('請先輸入房間代碼。');return;}if(!getOnlineWsUrl()){openOnline();setOnlineStatus('尚未設定 WebSocket 伺服器。請在 config.js 填入 wss:// 位址。');return;}busy=true;sendOnline({type:'JOIN_ROOM',code});};
+  function copyTextToClipboard(text, btnEl) {
+    const doFeedback = () => {
+      if (!btnEl) return;
+      btnEl.textContent = '已複製連結！';
+      setTimeout(() => { btnEl.textContent = '複製連結'; }, 2000);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(doFeedback).catch(() => {
+        fallbackCopy(text);
+        doFeedback();
+      });
+    } else {
+      fallbackCopy(text);
+      doFeedback();
+    }
+  }
+  function fallbackCopy(text) {
+    const temp = document.createElement('textarea');
+    temp.value = text;
+    temp.style.position = 'fixed';
+    temp.style.opacity = '0';
+    document.body.appendChild(temp);
+    temp.focus();
+    temp.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(temp);
+  }
   const copyBtn = document.getElementById('copyInviteUrlButton');
   if (copyBtn) {
     copyBtn.onclick = () => {
-      const input = document.getElementById('onlineInviteUrlInput');
-      if (input && input.value) {
-        navigator.clipboard.writeText(input.value).then(() => {
-          copyBtn.textContent = '已複製連結！';
-          setTimeout(() => { copyBtn.textContent = '複製連結'; }, 2000);
-        }).catch(() => {
-          input.select();
-          document.execCommand('copy');
-          copyBtn.textContent = '已複製連結！';
-          setTimeout(() => { copyBtn.textContent = '複製連結'; }, 2000);
-        });
+      const inviteInput = document.getElementById('onlineInviteUrlInput');
+      const roomInput = document.getElementById('onlineRoomInput');
+      let val = (inviteInput && inviteInput.value) || '';
+      if (!val) {
+        const code = (roomInput && roomInput.value.trim().toUpperCase()) || onlineRoomCode;
+        if (code) {
+          val = `${location.origin}${location.pathname}?join=${code}`;
+          if (inviteInput) {
+            inviteInput.value = val;
+            const inviteRow = document.getElementById('onlineInviteUrlRow');
+            if (inviteRow) inviteRow.hidden = false;
+          }
+        }
       }
+      copyTextToClipboard(val || location.href, copyBtn);
     };
   }
   document.getElementById('closeOnlineButton').onclick=()=>{onlineSheet.hidden=true;homeSheet.hidden=false;busy=true;setDock('home');updateRaceHud();};
