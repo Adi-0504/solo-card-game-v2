@@ -4,15 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#10231f" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Solo Table" />
   <meta name="description" content="Solo Card Game — a quiet tabletop card puzzle." />
   <title>Solo Card Game</title>
-  <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="./icon.svg" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -41,6 +34,7 @@
           <button class="primary-action" id="homeStartButton" type="button">開始新的一局</button>
           <button class="secondary-action" id="homeContinueButton" type="button">繼續遊玩</button>
           <button class="secondary-action" id="homeRaceButton" type="button">雙人競速</button>
+          <button class="secondary-action" id="homeOnlineButton" type="button">線上雙人</button>
         </div>
         <div class="home-links">
           <button id="homeFeaturesButton" type="button">功能介紹</button>
@@ -168,10 +162,30 @@
         </div>
       </div>
     </section>
+
+    <section id="onlineSheet" class="sheet-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="onlineTitle">
+      <div class="sheet online-sheet">
+        <div class="sheet-grabber"></div>
+        <p class="eyebrow">LIVE TABLE</p>
+        <h1 id="onlineTitle">線上雙人</h1>
+        <p class="sheet-note" id="onlineStatus">連接後建立房間，將房間代碼交給另一位玩家。</p>
+        <div class="online-room-code" id="onlineRoomCode" hidden></div>
+        <div class="online-invite-url-row" id="onlineInviteUrlRow" hidden>
+          <input id="onlineInviteUrlInput" readonly aria-label="邀請連結" />
+          <button class="secondary-action" id="copyInviteUrlButton" type="button">複製連結</button>
+        </div>
+        <div class="online-actions">
+          <button class="primary-action" id="createOnlineRoomButton" type="button">建立房間</button>
+          <div class="join-room-row"><input id="onlineRoomInput" inputmode="text" maxlength="6" placeholder="輸入房間代碼" aria-label="房間代碼" /><button class="secondary-action" id="joinOnlineRoomButton" type="button">加入</button></div>
+        </div>
+        <p class="online-note" id="onlineConfigNote">尚未設定 WebSocket 伺服器。GitHub Pages 仍可使用本機模式。</p>
+        <button class="secondary-action" id="closeOnlineButton" type="button">返回</button>
+      </div>
+    </section>
   </main>
+  <script src="./config.js"></script>
   <script src="./three.min.js"></script>
   <script src="./gsap.min.js"></script>
-  <script src="./app.js?v=7469bc9"></script>
-  <script src="./pwa.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
