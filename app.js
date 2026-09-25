@@ -30,14 +30,24 @@
   };
   let rng = new RNG();
   function getOnlineWsUrl() {
-    if (window.SOLO_CARD_GAME_CONFIG?.wsUrl) return window.SOLO_CARD_GAME_CONFIG.wsUrl;
-    const paramWs = new URLSearchParams(location.search).get('ws');
-    if (paramWs) return paramWs;
-    if (location.protocol === 'http:' || location.protocol === 'https:') {
+    let raw = window.SOLO_CARD_GAME_CONFIG?.wsUrl || new URLSearchParams(location.search).get('ws') || '';
+    if (!raw && (location.protocol === 'http:' || location.protocol === 'https:')) {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       return `${proto}//${location.host}/ws`;
     }
-    return '';
+    if (!raw) return '';
+    if (raw.startsWith('ws://') || raw.startsWith('wss://')) return raw;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      try {
+        const u = new URL(raw);
+        const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+        const path = u.pathname.endsWith('/ws') ? u.pathname : `${u.pathname.replace(/\/$/, '')}/ws`;
+        return `${proto}//${u.host}${path}`;
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
   }
   let onlineSocket=null, onlineRoomCode='', onlineToken='', onlinePending=null, onlineReconnectTimer=0;
 
