@@ -30,32 +30,38 @@
   };
   let rng = new RNG();
   function getOnlineWsUrl() {
+    const paramWs = new URLSearchParams(location.search).get('ws');
+    if (paramWs) return paramWs;
+
+    let raw = String(window.SOLO_CARD_GAME_CONFIG?.wsUrl || '').trim();
+    if (raw) {
+      if (raw.startsWith('ws://') || raw.startsWith('wss://')) return raw;
+      if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        try {
+          const u = new URL(raw);
+          if (!u.hostname.endsWith('github.io')) {
+            const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+            const path = u.pathname.endsWith('/ws') ? u.pathname : `${u.pathname.replace(/\/$/, '')}/ws`;
+            return `${proto}//${u.host}${path}`;
+          }
+        } catch {}
+      }
+      return raw;
+    }
+
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
       const port = location.port || '8787';
       return `ws://${location.hostname}:${port}/ws`;
     }
-    let raw = window.SOLO_CARD_GAME_CONFIG?.wsUrl || new URLSearchParams(location.search).get('ws') || '';
-    if (!raw && (location.protocol === 'http:' || location.protocol === 'https:')) {
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${proto}//${location.host}/ws`;
-    }
-    if (!raw) return '';
-    if (raw.startsWith('ws://') || raw.startsWith('wss://')) return raw;
-    if (raw.startsWith('http://') || raw.startsWith('https://')) {
-      try {
-        const u = new URL(raw);
-        if (u.hostname.endsWith('github.io')) {
-          const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-          return `${proto}//${location.host}/ws`;
-        }
-        const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-        const path = u.pathname.endsWith('/ws') ? u.pathname : `${u.pathname.replace(/\/$/, '')}/ws`;
-        return `${proto}//${u.host}${path}`;
-      } catch {
-        return raw;
+
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
+      if (!location.hostname.endsWith('github.io')) {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${proto}//${location.host}/ws`;
       }
     }
-    return raw;
+
+    return '';
   }
   let onlineSocket=null, onlineRoomCode='', onlineToken='', onlinePending=null, onlineReconnectTimer=0;
 
@@ -213,9 +219,8 @@
   }
   function connectOnline(){
     const wsUrl = getOnlineWsUrl();
-    const isGithubStatic = location.hostname.endsWith('github.io') && !window.SOLO_CARD_GAME_CONFIG?.wsUrl && !new URLSearchParams(location.search).get('ws');
-    if(!wsUrl || isGithubStatic){
-      onlineConfigNote.textContent='GitHub Pages 為靜態網站。跨裝置線上對戰請在 config.js 填入已部署的 wss:// 後端伺服器網址，或於網址加上 ?ws=wss://...';
+    if(!wsUrl){
+      onlineConfigNote.textContent='線上對戰需要 wss:// 後端伺服器支援。請在 config.js 填入已部署的 wss:// 網址，或於網址加上 ?ws=wss://...';
       onlineConfigNote.hidden=false;
       setOnlineStatus('未連接線上伺服器（請設定 wss:// 後端位址）');
       return;
