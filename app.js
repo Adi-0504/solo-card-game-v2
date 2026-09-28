@@ -29,45 +29,21 @@
     settings: { sound: true, haptics: true, reduceMotion: false, highContrast: false, seenIntro: false }
   };
   let rng = new RNG();
-  function getOnlineWsUrl() {
-    const paramWs = new URLSearchParams(location.search).get('ws');
-    if (paramWs) return paramWs;
-
-    let raw = String(window.SOLO_CARD_GAME_CONFIG?.wsUrl || '').trim();
-    if (raw) {
-      if (raw.startsWith('ws://') || raw.startsWith('wss://')) return raw;
-      if (raw.startsWith('http://') || raw.startsWith('https://')) {
-        try {
-          const u = new URL(raw);
-          if (!u.hostname.endsWith('github.io')) {
-            const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-            const path = u.pathname.endsWith('/ws') ? u.pathname : `${u.pathname.replace(/\/$/, '')}/ws`;
-            return `${proto}//${u.host}${path}`;
-          }
-        } catch {}
-      }
-      return raw;
-    }
-
-    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-      const port = location.port || '8787';
-      return `ws://${location.hostname}:${port}/ws`;
-    }
-
-    if (location.protocol === 'http:' || location.protocol === 'https:') {
-      if (!location.hostname.endsWith('github.io')) {
-        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${proto}//${location.host}/ws`;
-      }
-    }
-
-    return '';
-  }
-  let onlineSocket=null, onlineRoomCode='', onlineToken='', onlinePending=null, onlineReconnectTimer=0;
+  const PEER_PREFIX = 'scg2-';
+  const ICE_CONFIG = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' }
+    ]
+  };
+  let onlinePeer = null, onlineConn = null, onlineRoomCode = '', isP2PHost = false;
+  let localActionSeq = 0, lastReceivedSeq = 0, connectTimeoutTimer = null;
+  let opponentState = { moves: 0, completedGroups: 0, elapsedMs: 0, finished: false };
 
   function cloneCard(c) { return { number: c.number, suit: c.suit, id: c.id }; }
   function makeCard() { const c = rng.card(); return { ...c, id: `card-${rng.serialize().toString(36)}` }; }
-  function initialState() { rng = new RNG((Date.now() ^ 0x41a7f3) >>> 0); GameState.phase='PLAYING'; GameState.hand = Array.from({length:13}, makeCard); GameState.tableRow=[]; GameState.completedGroups=[]; GameState.moves=0; GameState.rescuesUsed=0; GameState.raceStartedAt=GameState.mode==='RACE'?Date.now():0; GameState.rngState=rng.serialize(); }
+  function initialState() { rng = new RNG((Date.now() ^ 0x41a7f3) >>> 0); GameState.phase='PLAYING'; GameState.hand = Array.from({length:13}, makeCard); GameState.tableRow=[]; GameState.completedGroups=[]; GameState.moves=0; GameState.rescuesUsed=0; GameState.raceStartedAt=['RACE','ONLINE'].includes(GameState.mode)?Date.now():0; GameState.rngState=rng.serialize(); }
 
   const DB = {
     async open() { if(!window.indexedDB)return null; return new Promise((resolve,reject)=>{ const req=indexedDB.open('solo-card-game',1); req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('state'))req.result.createObjectStore('state');}; req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error); }); },
@@ -150,7 +126,53 @@
   function moveHandForSelection(selected){ GameState.hand.forEach((c,i)=>{if(i!==selected)layoutCard(c,i+(i>selected?1:0),GameState.hand.length+1,'hand',false);}); }
   function beginDrag(e){ if(busy||GameState.phase!=='PLAYING')return; const hit=cardAt(e.clientX,e.clientY); if(!hit)return; const card=hit.object.parent.userData.card; const index=GameState.hand.findIndex(c=>c.id===card.id); if(index<0)return; e.preventDefault(); renderer.domElement.setPointerCapture?.(e.pointerId); const mesh=cardMeshes.get(card.id); drag={pointerId:e.pointerId,card,index,mesh,startX:e.clientX,startY:e.clientY,moved:false,offsetX:0}; mesh.position.y=.72; mesh.scale.setScalar(1.035); moveHandForSelection(index); feedback('已拿起牌'); }
   function dragMove(e){ if(!drag||e.pointerId!==drag.pointerId)return; const dx=e.clientX-drag.startX,dy=e.clientY-drag.startY; if(!drag.moved&&Math.hypot(dx,dy)<7)return; drag.moved=true; const p=screenToTable(e.clientX,e.clientY); drag.mesh.position.x=p.x; drag.mesh.position.z=Math.min(-.2,Math.max(-2.2,p.z)); drag.mesh.position.y=.72; const next=insertionFor(p.x); if(next!==previewIndex){previewIndex=next;moveRowForPreview();} }
-  async function endDrag(e){ if(!drag||e.pointerId!==drag.pointerId)return; const current=drag; drag=null; previewIndex=null; renderer.domElement.releasePointerCapture?.(e.pointerId); if(!current.moved){current.mesh.scale.setScalar(1);syncMeshes();return;} const p=screenToTable(e.clientX,e.clientY); const index=insertionFor(p.x); busy=true; if(GameState.mode==='ONLINE'){syncMeshes();if(!sendOnline({type:'PLACE_CARD',cardId:current.card.id,index})){setOnlineStatus('正在連接線上伺服器…');}return;} const result=GameEngine.placeCard(current.card.id,index); if(!result.ok){feedback('牌回到手邊');showContextHint('這張牌接不上，請換一張或換個位置');if(GameState.settings.reduceMotion){syncMeshes();busy=false;}else{gsap.to(current.mesh.position,{y:.24,duration:.1,ease:'power2.out',yoyo:true,repeat:1,onComplete:()=>{syncMeshes();busy=false;}});gsap.to(current.mesh.rotation,{z:.035,duration:.1,yoyo:true,repeat:1,ease:'power1.inOut'});}return;} feedback('牌已放到桌面'); playTone(); syncMeshes(); if(result.completed?.length){feedback('牌面形成連續結構');showContextHint('完成一組，繼續建立下一組');} else if(result.rescued){feedback('桌面沒有可完成的牌組，已補入救援牌');showContextHint(`已補入四張 ${result.rescueNumber}，把它們排在一起即可完成`);} await save(); if(result.winner||result.loser)showResult(result.winner?'WON':'LOST'); setTimeout(()=>{if(!result.winner&&!result.loser)busy=false;}, GameState.settings.reduceMotion?30:360); }
+  async function endDrag(e){
+    if(!drag||e.pointerId!==drag.pointerId)return;
+    const current=drag; drag=null; previewIndex=null;
+    renderer.domElement.releasePointerCapture?.(e.pointerId);
+    if(!current.moved){current.mesh.scale.setScalar(1);syncMeshes();return;}
+    const p=screenToTable(e.clientX,e.clientY);
+    const index=insertionFor(p.x);
+    busy=true;
+    const result=GameEngine.placeCard(current.card.id,index);
+    if(!result.ok){
+      feedback('牌回到手邊');
+      showContextHint('這張牌接不上，請換一張或換個位置');
+      if(GameState.settings.reduceMotion){syncMeshes();busy=false;}
+      else{
+        gsap.to(current.mesh.position,{y:.24,duration:.1,ease:'power2.out',yoyo:true,repeat:1,onComplete:()=>{syncMeshes();busy=false;}});
+        gsap.to(current.mesh.rotation,{z:.035,duration:.1,yoyo:true,repeat:1,ease:'power1.inOut'});
+      }
+      return;
+    }
+    feedback('牌已放到桌面');
+    playTone();
+    syncMeshes();
+    if(result.completed?.length){
+      feedback('牌面形成連續結構');
+      showContextHint('完成一組，繼續建立下一組');
+    } else if(result.rescued){
+      feedback('桌面沒有可完成的牌組，已補入救援牌');
+      showContextHint(`已補入四張 ${result.rescueNumber}，把它們排在一起即可完成`);
+    }
+    await save();
+    if(GameState.mode==='ONLINE'){
+      sendP2PAction('CARD_PLACED', {
+        moves: GameState.moves,
+        completedGroupsCount: GameState.completedGroups.length,
+        elapsedMs: Math.max(0, Date.now() - (GameState.raceStartedAt || Date.now()))
+      });
+      if(result.winner){
+        const elapsed = Math.max(0, Date.now() - (GameState.raceStartedAt || Date.now()));
+        handleLocalPlayerFinished(elapsed);
+      } else {
+        setTimeout(()=>{ busy=false; }, GameState.settings.reduceMotion?30:360);
+      }
+      return;
+    }
+    if(result.winner||result.loser)showResult(result.winner?'WON':'LOST');
+    setTimeout(()=>{if(!result.winner&&!result.loser)busy=false;}, GameState.settings.reduceMotion?30:360);
+  }
   function cancelDrag(){ if(!drag)return; drag.mesh.position.y=.06;drag.mesh.scale.setScalar(1);drag=null;previewIndex=null;syncMeshes(); }
   renderer.domElement.addEventListener('pointerdown',beginDrag,{passive:false}); renderer.domElement.addEventListener('pointermove',dragMove,{passive:false}); renderer.domElement.addEventListener('pointerup',endDrag,{passive:false}); renderer.domElement.addEventListener('pointercancel',cancelDrag); renderer.domElement.addEventListener('pointerleave',e=>{if(drag&&e.pointerId===drag.pointerId)dragMove(e)});
 
@@ -177,14 +199,54 @@
   function showStateHint(){if(GameState.phase!=='PLAYING')return;if(GameState.tableRow.length===0)showContextHint('從手牌拿一張牌到桌面');else if(GameState.tableRow.length<3)showContextHint('先放滿三張牌，建立桌面牌列');else showContextHint('把牌接成連號，或把四張同數字排在一起');}
   setInterval(updateRaceHud,250);
   function formatRaceTime(ms){const total=Math.max(0,Math.floor(ms/1000));return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;}
-  function updateRaceHud(){const active=(GameState.mode==='RACE'||GameState.mode==='ONLINE')&&GameState.phase==='PLAYING'&&homeSheet.hidden&&featuresSheet.hidden&&rulesSheet.hidden&&onlineSheet.hidden;raceHud.hidden=!active;if(!active)return;racePlayerLabel.textContent=GameState.mode==='ONLINE'?`玩家 ${GameState.racePlayer} · 線上`:`玩家 ${GameState.racePlayer}`;raceTimer.textContent=formatRaceTime(Date.now()-(GameState.raceStartedAt||Date.now()));}
-  function setOnlineStatus(text){onlineStatus.textContent=text;}
-  function saveOnlineSession(code, token) {
+  function updateRaceHud() {
+    const active = (GameState.mode === 'RACE' || GameState.mode === 'ONLINE') &&
+      GameState.phase === 'PLAYING' &&
+      homeSheet.hidden && featuresSheet.hidden && rulesSheet.hidden && onlineSheet.hidden;
+    raceHud.hidden = !active;
+    if (!active) return;
+    const elapsed = Date.now() - (GameState.raceStartedAt || Date.now());
+    if (GameState.mode === 'ONLINE') {
+      const oppG = opponentState?.completedGroups || 0;
+      racePlayerLabel.textContent = `玩家 ${GameState.racePlayer} · 對手 ${oppG}/4 組`;
+    } else {
+      racePlayerLabel.textContent = `玩家 ${GameState.racePlayer}`;
+    }
+    raceTimer.textContent = formatRaceTime(elapsed);
+  }
+
+  function setOnlineStatus(text) {
+    if (onlineStatus) onlineStatus.textContent = text;
+  }
+
+  function generateRoomCode() {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    let code = '';
+    const bytes = new Uint8Array(6);
+    crypto.getRandomValues(bytes);
+    for (let i = 0; i < 6; i++) {
+      code += chars[bytes[i] % chars.length];
+    }
+    return code;
+  }
+
+  function buildInviteUrl(code) {
+    const origin = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      ? location.origin
+      : 'https://adi-0504.github.io';
+    const pathname = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      ? location.pathname
+      : '/solo-card-game-v2/';
+    return `${origin}${pathname}?join=${code}`;
+  }
+
+  function saveOnlineSession(code) {
     try {
-      if (code && token) localStorage.setItem('solo_online_session', JSON.stringify({ code, token }));
+      if (code) localStorage.setItem('solo_online_session', JSON.stringify({ code }));
       else localStorage.removeItem('solo_online_session');
     } catch {}
   }
+
   function getSavedOnlineSession() {
     try {
       const raw = localStorage.getItem('solo_online_session');
@@ -192,113 +254,397 @@
     } catch {}
     return null;
   }
+
+  function cleanupOnlineConnection() {
+    clearTimeout(connectTimeoutTimer);
+    connectTimeoutTimer = null;
+    if (onlineConn) {
+      try { onlineConn.close(); } catch {}
+      onlineConn = null;
+    }
+    if (onlinePeer) {
+      try { onlinePeer.destroy(); } catch {}
+      onlinePeer = null;
+    }
+  }
+
   function showOnlineRoomInfo(code) {
     onlineRoomCode = code;
-    onlineRoomCodeEl.textContent = code;
-    onlineRoomCodeEl.hidden = false;
-    const inviteUrl = `${location.origin}${location.pathname}?join=${code}`;
+    if (onlineRoomCodeEl) {
+      onlineRoomCodeEl.textContent = code;
+      onlineRoomCodeEl.hidden = false;
+    }
+    const inviteUrl = buildInviteUrl(code);
     const inviteUrlInput = document.getElementById('onlineInviteUrlInput');
     const inviteUrlRow = document.getElementById('onlineInviteUrlRow');
     if (inviteUrlInput && inviteUrlRow) {
       inviteUrlInput.value = inviteUrl;
       inviteUrlRow.hidden = false;
     }
-    saveOnlineSession(code, onlineToken);
-    setOnlineStatus(`房間代碼 ${code} 已建立！將邀請連結傳給對手即可加入。`);
+    saveOnlineSession(code);
+    setOnlineStatus(`房間代碼 ${code} 已建立！分享邀請連結給對手，等待加入…`);
   }
-  function sendOnline(message){
-    const wsUrl = getOnlineWsUrl();
-    if(!wsUrl){ setOnlineStatus('無法取得伺服器位址'); return false; }
-    if(onlineSocket?.readyState===WebSocket.OPEN){
-      onlineSocket.send(JSON.stringify(message));
-      return true;
-    }
-    onlinePending=message;
-    connectOnline();
-    return false;
-  }
-  function connectOnline(){
-    const wsUrl = getOnlineWsUrl();
-    if(!wsUrl){
-      onlineConfigNote.textContent='線上對戰需要 wss:// 後端伺服器支援。請在 config.js 填入已部署的 wss:// 網址，或於網址加上 ?ws=wss://...';
-      onlineConfigNote.hidden=false;
-      setOnlineStatus('未連接線上伺服器（請設定 wss:// 後端位址）');
-      return;
-    }
-    onlineConfigNote.hidden=true;
-    if(onlineSocket&&(onlineSocket.readyState===WebSocket.OPEN||onlineSocket.readyState===WebSocket.CONNECTING))return;
-    setOnlineStatus('正在連接線上桌面…'); onlineSocket=new WebSocket(wsUrl);
-    onlineSocket.onopen=()=>{
-      setOnlineStatus('已連線，正在等待房間操作。');
-      const saved = getSavedOnlineSession();
-      if(!onlineToken && saved) { onlineToken = saved.token; onlineRoomCode = saved.code; }
-      if(onlineToken && onlineRoomCode) onlineSocket.send(JSON.stringify({type:'RECONNECT',code:onlineRoomCode,token:onlineToken}));
-      else if(onlinePending){ onlineSocket.send(JSON.stringify(onlinePending)); onlinePending=null; }
-    };
-    onlineSocket.onmessage=e=>{let msg;try{msg=JSON.parse(e.data);}catch{return;}handleOnlineMessage(msg);};
-    onlineSocket.onerror=()=>setOnlineStatus('無法連接線上伺服器。');
-    onlineSocket.onclose=()=>{
-      onlineSocket=null;
-      if(onlineRoomCode&&onlineToken){
-        setOnlineStatus('連線中斷，正在嘗試重新連線…');
-        clearTimeout(onlineReconnectTimer);
-        onlineReconnectTimer=setTimeout(connectOnline,1800);
-      }else setOnlineStatus('線上伺服器目前未連接。');
-    };
-  }
-  function applyOnlineState(msg){
-    const game=msg.game||{}; GameState.mode='ONLINE';GameState.racePlayer=msg.player||1;GameState.hand=(game.hand||[]).map(cloneCard);GameState.tableRow=(game.tableRow||[]).map(cloneCard);GameState.completedGroups=(game.completedGroups||[]).map(g=>({cards:g.cards.map(cloneCard),rules:[...g.rules]}));GameState.moves=game.moves||0;GameState.raceStartedAt=Date.now()-(game.elapsedMs||0);GameState.phase=game.finished?'PAUSED':msg.room?.status==='PLAYING'?'PLAYING':'PAUSED';syncMeshes();
-    if(msg.room?.roomCode) showOnlineRoomInfo(msg.room.roomCode);
-    homeSheet.hidden=true;pauseSheet.hidden=true;resumeSheet.hidden=true;onlineSheet.hidden=msg.room?.status==='PLAYING';busy=GameState.phase!=='PLAYING';setDock('table');updateRaceHud();
-    if(msg.room?.status==='WAITING')setOnlineStatus(`房間 ${onlineRoomCode} 已建立，等待另一位玩家加入。`);else if(game.finished)setOnlineStatus('你已完成，等待另一位玩家。');else setOnlineStatus('線上牌局進行中。');
-  }
-  function showOnlineMatchResult(results,winner){
-    GameState.mode='ONLINE';GameState.phase='WON';busy=true;const ordered=[...(results||[])].sort((a,b)=>a.elapsedMs-b.elapsedMs);resultSheet.classList.add('victory-result');document.body.classList.add('victory-state');document.getElementById('resultEyebrow').textContent='ONLINE RACE COMPLETE';document.getElementById('resultTitle').textContent=`玩家 ${winner} 勝出`;document.getElementById('resultNote').textContent=ordered.map(r=>`玩家 ${r.player} ${formatRaceTime(r.elapsedMs)}`).join(' · ');document.getElementById('resultGroups').textContent=String(VICTORY_GROUPS).padStart(2,'0');document.getElementById('resultMoves').textContent=String(GameState.moves||0).padStart(2,'0');document.getElementById('resultTypes').textContent='LIVE';resultSheet.hidden=false;onlineSheet.hidden=true;updateRaceHud();}
-  function handleOnlineMessage(msg){
-    if(msg.type==='CONNECTED'){
-      onlineToken=msg.token||onlineToken; onlineRoomCode=msg.room?.roomCode||onlineRoomCode;
-      saveOnlineSession(onlineRoomCode, onlineToken);
-      if(msg.room?.status==='WAITING') showOnlineRoomInfo(onlineRoomCode);
-      return;
-    }
-    if(msg.type==='ROOM_CREATED'){
-      showOnlineRoomInfo(msg.code);
-      return;
-    }
-    if(msg.type==='STATE'){applyOnlineState(msg);return;}
-    if(msg.type==='MATCH_STARTED'){onlineSheet.hidden=true;setOnlineStatus('兩位玩家已就緒，開始計時。');updateRaceHud();return;}
-    if(msg.type==='PLAYER_FINISHED'){setOnlineStatus(`玩家 ${msg.player} 已完成，等待另一位玩家。`);return;}
-    if(msg.type==='MATCH_RESULT'){showOnlineMatchResult(msg.results,msg.winner);saveOnlineSession('','');return;}
-    if(msg.type==='RESCUE_SET'){showContextHint(`已補入四張 ${msg.number}，把它們排在一起即可完成`);return;}
-    if(msg.type==='PLAYER_DISCONNECTED'){setOnlineStatus('另一位玩家已離線，等待重新連線。');return;}
-    if(msg.type==='ERROR'){
-      if(msg.code==='RECONNECT_FAILED'||msg.code==='ROOM_NOT_FOUND'){saveOnlineSession('','');onlineRoomCode='';}
-      setOnlineStatus(msg.message||'線上操作失敗。');busy=false;
-    }
-  }
-  function checkInviteUrlOnLoad(){
-    const params=new URLSearchParams(location.search);
-    const joinCode=params.get('join')||params.get('room');
-    if(joinCode){
-      const code=joinCode.trim().toUpperCase();
-      history.replaceState(null,'',location.pathname+location.hash);
-      openOnline();
-      document.getElementById('onlineRoomInput').value=code;
-      setOnlineStatus(`正在加入房間 ${code}…`);
-      busy=true;
-      sendOnline({type:'JOIN_ROOM',code});
-      return true;
+
+  function sendP2PMessage(msg) {
+    if (onlineConn && onlineConn.open) {
+      try {
+        onlineConn.send(msg);
+        return true;
+      } catch (e) {
+        console.warn('sendP2PMessage error:', e);
+      }
     }
     return false;
   }
-  function openOnline(){
-    onlineSheet.hidden=false;homeSheet.hidden=true;busy=true;
-    const wsUrl = getOnlineWsUrl();
-    onlineConfigNote.hidden=Boolean(wsUrl);
-    if(!wsUrl) setOnlineStatus('尚未設定 WebSocket 伺服器。');
-    else connectOnline();
+
+  function sendP2PAction(actionName, payload) {
+    return sendP2PMessage({
+      sessionId: onlineRoomCode,
+      seq: ++localActionSeq,
+      type: 'PLAYER_ACTION',
+      action: actionName,
+      playerId: GameState.racePlayer,
+      payload
+    });
+  }
+
+  function setupDataConnection(conn) {
+    onlineConn = conn;
+    clearTimeout(connectTimeoutTimer);
+
+    conn.on('open', () => {
+      clearTimeout(connectTimeoutTimer);
+      setOnlineStatus('WebRTC P2P 已成功連線！比賽開始。');
+      busy = false;
+
+      if (isP2PHost) {
+        const startTime = Date.now() + 600;
+        GameState.mode = 'ONLINE';
+        GameState.racePlayer = 1;
+        GameState.raceStartedAt = startTime;
+        GameState.phase = 'PLAYING';
+        localActionSeq = 0;
+        lastReceivedSeq = 0;
+        opponentState = { moves: 0, completedGroups: 0, elapsedMs: 0, finished: false };
+        initialState();
+        GameState.raceStartedAt = startTime;
+        syncMeshes();
+        closeOverlays();
+        updateRaceHud();
+        setDock('table');
+        feedback('對手已加入，線上競速開始！');
+        showContextHint('兩位玩家就緒！開始計時，率先完成 4 組牌面');
+
+        sendP2PMessage({
+          sessionId: onlineRoomCode,
+          seq: ++localActionSeq,
+          type: 'MATCH_START',
+          playerId: 1,
+          payload: {
+            startTime,
+            guestPlayerId: 2
+          }
+        });
+      }
+    });
+
+    conn.on('data', (data) => {
+      handleP2PMessage(data);
+    });
+
+    conn.on('close', () => {
+      if (GameState.mode === 'ONLINE' && GameState.phase === 'PLAYING') {
+        showContextHint('對手已斷線');
+        setOnlineStatus('對手已中斷連線。');
+      }
+    });
+
+    conn.on('error', (err) => {
+      console.warn('DataConnection error:', err);
+      setOnlineStatus('P2P 連線發生錯誤。');
+    });
+  }
+
+  function handleP2PMessage(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.sessionId !== onlineRoomCode) return;
+    if (typeof msg.seq === 'number' && msg.seq <= lastReceivedSeq) return;
+    lastReceivedSeq = msg.seq || lastReceivedSeq;
+
+    if (msg.type === 'MATCH_START') {
+      clearTimeout(connectTimeoutTimer);
+      const startTime = msg.payload?.startTime || Date.now();
+      GameState.mode = 'ONLINE';
+      GameState.racePlayer = msg.payload?.guestPlayerId || 2;
+      GameState.raceStartedAt = startTime;
+      GameState.phase = 'PLAYING';
+      localActionSeq = 0;
+      lastReceivedSeq = msg.seq || 1;
+      opponentState = { moves: 0, completedGroups: 0, elapsedMs: 0, finished: false };
+      initialState();
+      GameState.raceStartedAt = startTime;
+      syncMeshes();
+      closeOverlays();
+      updateRaceHud();
+      setDock('table');
+      feedback('已連線至對手，線上競速開始！');
+      showContextHint('連線成功！開始計時，率先完成 4 組牌面');
+
+      sendP2PMessage({
+        sessionId: onlineRoomCode,
+        seq: ++localActionSeq,
+        type: 'MATCH_START_ACK',
+        playerId: GameState.racePlayer,
+        payload: { ready: true }
+      });
+      return;
+    }
+
+    if (msg.type === 'PLAYER_ACTION') {
+      const prevGroups = opponentState.completedGroups;
+      opponentState.moves = msg.payload?.moves || opponentState.moves;
+      opponentState.completedGroups = msg.payload?.completedGroupsCount ?? opponentState.completedGroups;
+      opponentState.elapsedMs = msg.payload?.elapsedMs || opponentState.elapsedMs;
+
+      if (opponentState.completedGroups > prevGroups) {
+        showContextHint(`對手已完成第 ${opponentState.completedGroups} 組牌面！`);
+      }
+      updateRaceHud();
+      return;
+    }
+
+    if (msg.type === 'PLAYER_FINISHED') {
+      opponentState.finished = true;
+      opponentState.elapsedMs = msg.payload?.elapsedMs || 0;
+      opponentState.moves = msg.payload?.moves || 0;
+
+      const oppTimeStr = formatRaceTime(opponentState.elapsedMs);
+      showContextHint(`對手已完成（用時 ${oppTimeStr}）！`);
+
+      if (GameState.phase === 'PAUSED' && GameState.mode === 'ONLINE' && GameState.myFinishedResult) {
+        concludeMatch();
+      }
+      return;
+    }
+
+    if (msg.type === 'MATCH_COMPLETE') {
+      showOnlineMatchResult(msg.payload?.results, msg.payload?.winner);
+      saveOnlineSession('');
+      return;
+    }
+  }
+
+  function handleLocalPlayerFinished(elapsedMs) {
+    GameState.phase = 'PAUSED';
+    busy = true;
+    GameState.myFinishedResult = {
+      player: GameState.racePlayer,
+      elapsedMs,
+      moves: GameState.moves
+    };
+
+    sendP2PMessage({
+      sessionId: onlineRoomCode,
+      seq: ++localActionSeq,
+      type: 'PLAYER_FINISHED',
+      playerId: GameState.racePlayer,
+      payload: {
+        elapsedMs,
+        moves: GameState.moves
+      }
+    });
+
+    if (opponentState.finished) {
+      concludeMatch();
+    } else {
+      feedback('你已完成！等待對手結束…');
+      showContextHint(`你已完成 4 組牌面！用時 ${formatRaceTime(elapsedMs)}。等待對手完成…`, 8000);
+      setOnlineStatus(`你已完成（用時 ${formatRaceTime(elapsedMs)}），等待對手結束。`);
+    }
+  }
+
+  function concludeMatch() {
+    const myElapsed = GameState.myFinishedResult?.elapsedMs ?? Math.max(0, Date.now() - (GameState.raceStartedAt || Date.now()));
+    const myRes = {
+      player: GameState.racePlayer,
+      elapsedMs: myElapsed,
+      moves: GameState.moves
+    };
+    const oppPlayer = GameState.racePlayer === 1 ? 2 : 1;
+    const oppRes = {
+      player: oppPlayer,
+      elapsedMs: opponentState.elapsedMs || 9999999,
+      moves: opponentState.moves || 0
+    };
+    const results = [myRes, oppRes].sort((a, b) => a.elapsedMs - b.elapsedMs);
+    const winner = results[0].player;
+
+    sendP2PMessage({
+      sessionId: onlineRoomCode,
+      seq: ++localActionSeq,
+      type: 'MATCH_COMPLETE',
+      playerId: GameState.racePlayer,
+      payload: { results, winner }
+    });
+
+    showOnlineMatchResult(results, winner);
+    saveOnlineSession('');
+  }
+
+  function showOnlineMatchResult(results, winner) {
+    GameState.mode = 'ONLINE';
+    GameState.phase = 'WON';
+    busy = true;
+    const ordered = [...(results || [])].sort((a, b) => a.elapsedMs - b.elapsedMs);
+    resultSheet.classList.add('victory-result');
+    document.body.classList.add('victory-state');
+    document.getElementById('resultEyebrow').textContent = 'ONLINE RACE COMPLETE';
+    document.getElementById('resultTitle').textContent = `玩家 ${winner} 勝出`;
+    document.getElementById('resultNote').textContent = ordered.map(r => `玩家 ${r.player} ${formatRaceTime(r.elapsedMs)} (${r.moves || 0}步)`).join(' · ');
+    document.getElementById('resultGroups').textContent = String(VICTORY_GROUPS).padStart(2, '0');
+    document.getElementById('resultMoves').textContent = String(GameState.moves || 0).padStart(2, '0');
+    document.getElementById('resultTypes').textContent = 'LIVE';
+    resultSheet.hidden = false;
+    onlineSheet.hidden = true;
     updateRaceHud();
   }
+
+  function createP2PRoom() {
+    if (!window.Peer) {
+      setOnlineStatus('WebRTC 元件尚未就緒，請重新整理頁面。');
+      busy = false;
+      return;
+    }
+    cleanupOnlineConnection();
+
+    const code = generateRoomCode();
+    onlineRoomCode = code;
+    isP2PHost = true;
+    GameState.mode = 'ONLINE';
+    GameState.racePlayer = 1;
+    GameState.myFinishedResult = null;
+
+    showOnlineRoomInfo(code);
+    setOnlineStatus(`正在建立 P2P 房間 ${code}…`);
+
+    const peerId = `${PEER_PREFIX}${code.toLowerCase()}`;
+    try {
+      onlinePeer = new window.Peer(peerId, {
+        debug: 1,
+        config: ICE_CONFIG
+      });
+    } catch (e) {
+      setOnlineStatus('無法建立 WebRTC 連線：' + e.message);
+      busy = false;
+      return;
+    }
+
+    onlinePeer.on('open', () => {
+      setOnlineStatus(`房間代碼 ${code} 已就緒！請分享邀請連結給對手加入。`);
+      busy = false;
+    });
+
+    onlinePeer.on('connection', (conn) => {
+      setOnlineStatus('對手正在連線…');
+      setupDataConnection(conn);
+    });
+
+    onlinePeer.on('error', (err) => {
+      console.warn('Host peer error:', err);
+      if (err.type === 'unavailable-id') {
+        createP2PRoom();
+        return;
+      }
+      setOnlineStatus(`連線錯誤: ${err.type || err.message}`);
+      busy = false;
+    });
+  }
+
+  function joinP2PRoom(code) {
+    if (!window.Peer) {
+      setOnlineStatus('WebRTC 元件尚未就緒，請重新整理頁面。');
+      busy = false;
+      return;
+    }
+    const cleanCode = (code || '').trim().toUpperCase();
+    if (!cleanCode || cleanCode.length < 4) {
+      setOnlineStatus('請輸入有效的房間代碼。');
+      busy = false;
+      return;
+    }
+
+    cleanupOnlineConnection();
+    onlineRoomCode = cleanCode;
+    isP2PHost = false;
+    GameState.mode = 'ONLINE';
+    GameState.racePlayer = 2;
+    GameState.myFinishedResult = null;
+
+    setOnlineStatus(`正在連線至房間 ${cleanCode}…`);
+    const targetPeerId = `${PEER_PREFIX}${cleanCode.toLowerCase()}`;
+
+    try {
+      onlinePeer = new window.Peer(null, {
+        debug: 1,
+        config: ICE_CONFIG
+      });
+    } catch (e) {
+      setOnlineStatus('無法建立 WebRTC 連線：' + e.message);
+      busy = false;
+      return;
+    }
+
+    connectTimeoutTimer = setTimeout(() => {
+      if (!onlineConn || !onlineConn.open) {
+        cleanupOnlineConnection();
+        setOnlineStatus(`無法連線至房間 ${cleanCode}。請確認房間代碼正確，或主機是否在等待中。`);
+        busy = false;
+      }
+    }, 12000);
+
+    onlinePeer.on('open', () => {
+      const conn = onlinePeer.connect(targetPeerId, { reliable: true });
+      setupDataConnection(conn);
+    });
+
+    onlinePeer.on('error', (err) => {
+      console.warn('Guest peer error:', err);
+      clearTimeout(connectTimeoutTimer);
+      if (err.type === 'peer-unavailable') {
+        setOnlineStatus(`找不到房間 ${cleanCode}。請確認代碼正確且主機正在線上等待。`);
+      } else {
+        setOnlineStatus(`連線失敗 (${err.type || err.message})。請重試。`);
+      }
+      busy = false;
+    });
+  }
+
+  function checkInviteUrlOnLoad() {
+    const params = new URLSearchParams(location.search);
+    const joinCode = params.get('join') || params.get('room');
+    if (joinCode) {
+      const code = joinCode.trim().toUpperCase();
+      history.replaceState(null, '', location.pathname + location.hash);
+      openOnline();
+      const roomInput = document.getElementById('onlineRoomInput');
+      if (roomInput) roomInput.value = code;
+      setOnlineStatus(`正在加入房間 ${code}…`);
+      busy = true;
+      joinP2PRoom(code);
+      return true;
+    }
+    return false;
+  }
+
+  function openOnline() {
+    onlineSheet.hidden = false;
+    homeSheet.hidden = true;
+    busy = false;
+    onlineConfigNote.hidden = true;
+    setOnlineStatus('請點擊「建立房間」或輸入對手的房間代碼加入對戰。');
+    updateRaceHud();
+  }
+
   function showResult(kind){
     if(GameState.mode==='RACE'&&kind==='WON'){
       const result={player:GameState.racePlayer,time:Math.max(0,Date.now()-(GameState.raceStartedAt||Date.now())),moves:GameState.moves||0};
@@ -334,8 +680,8 @@
   document.getElementById('homeFeaturesButton').onclick=()=>{homeSheet.hidden=true;featuresSheet.hidden=false;};
   document.getElementById('homeRulesButton').onclick=()=>{homeSheet.hidden=true;rulesSheet.hidden=false;};
   document.getElementById('closeFeaturesButton').onclick=()=>{featuresSheet.hidden=true;homeSheet.hidden=false;};
-  document.getElementById('createOnlineRoomButton').onclick=()=>{if(!getOnlineWsUrl()){openOnline();setOnlineStatus('尚未設定 WebSocket 伺服器。請在 config.js 填入 wss:// 位址。');return;}busy=true;sendOnline({type:'CREATE_ROOM'});};
-  document.getElementById('joinOnlineRoomButton').onclick=()=>{const code=document.getElementById('onlineRoomInput').value.trim().toUpperCase();if(!code){setOnlineStatus('請先輸入房間代碼。');return;}if(!getOnlineWsUrl()){openOnline();setOnlineStatus('尚未設定 WebSocket 伺服器。請在 config.js 填入 wss:// 位址。');return;}busy=true;sendOnline({type:'JOIN_ROOM',code});};
+  document.getElementById('createOnlineRoomButton').onclick=()=>{busy=true;createP2PRoom();};
+  document.getElementById('joinOnlineRoomButton').onclick=()=>{const code=document.getElementById('onlineRoomInput').value.trim().toUpperCase();if(!code){setOnlineStatus('請先輸入房間代碼。');return;}busy=true;joinP2PRoom(code);};
   function copyTextToClipboard(text, btnEl) {
     const doFeedback = () => {
       if (!btnEl) return;
@@ -372,7 +718,7 @@
       if (!val) {
         const code = (roomInput && roomInput.value.trim().toUpperCase()) || onlineRoomCode;
         if (code) {
-          val = `${location.origin}${location.pathname}?join=${code}`;
+          val = buildInviteUrl(code);
           if (inviteInput) {
             inviteInput.value = val;
             const inviteRow = document.getElementById('onlineInviteUrlRow');
@@ -380,15 +726,27 @@
           }
         }
       }
-      copyTextToClipboard(val || location.href, copyBtn);
+      copyTextToClipboard(val || buildInviteUrl(onlineRoomCode || 'ROOM'), copyBtn);
     };
   }
-  document.getElementById('closeOnlineButton').onclick=()=>{onlineSheet.hidden=true;homeSheet.hidden=false;busy=true;setDock('home');updateRaceHud();};
+  document.getElementById('closeOnlineButton').onclick=()=>{cleanupOnlineConnection();onlineSheet.hidden=true;homeSheet.hidden=false;busy=false;setDock('home');updateRaceHud();};
   document.querySelectorAll('.dock-item').forEach(item=>item.addEventListener('click',()=>openDockView(item.dataset.view)));
   document.getElementById('pauseButton').onclick=()=>{if(GameState.phase!=='PLAYING')return;GameState.phase='PAUSED';pauseSheet.hidden=false;busy=true;save();setDock('table');}; document.getElementById('resumeButton').onclick=()=>{if(GameState.phase==='PAUSED')GameState.phase='PLAYING';pauseSheet.hidden=true;busy=false;save();setDock('table');}; document.getElementById('restartButton').onclick=restart; document.getElementById('settingsButton').onclick=()=>{pauseSheet.hidden=true;settingsSheet.hidden=false;}; document.getElementById('rulesButton').onclick=()=>{pauseSheet.hidden=true;rulesSheet.hidden=false;busy=true;setDock('rules');}; document.getElementById('homeButton').onclick=()=>{goHome();setDock('home');}; document.getElementById('closeRulesButton').onclick=()=>{rulesSheet.hidden=true;if(GameState.phase==='PAUSED'){pauseSheet.hidden=false;busy=true;setDock('table');}else{homeSheet.hidden=false;busy=true;setDock('home');}}; document.getElementById('exitButton').onclick=()=>{save();if(history.length>1)history.back();else{pauseSheet.hidden=true;busy=false;}}; document.getElementById('closeSettingsButton').onclick=()=>{settingsSheet.hidden=true;pauseSheet.hidden=false;}; document.getElementById('viewTableButton').onclick=closeResult; document.getElementById('newGameButton').onclick=()=>{if(GameState.mode==='RACE')startRace();else if(GameState.mode==='ONLINE')startNewGame();else restart();};
   const settingIds={sound:'soundToggle',haptics:'hapticsToggle',reduceMotion:'motionToggle',highContrast:'contrastToggle'};
   Object.keys(settingIds).forEach(k=>{const el=document.getElementById(settingIds[k]);el.addEventListener('change',async()=>{GameState.settings[k]=el.checked; if(k==='highContrast')cardMeshes.forEach((_,id)=>removeMesh(id));syncMeshes();await save();});});
   restore().then(()=>{Object.keys(settingIds).forEach(k=>{const el=document.getElementById(settingIds[k]);if(el)el.checked=!!GameState.settings[k];});syncMeshes();introSheet.hidden=true;featuresSheet.hidden=true;rulesSheet.hidden=true;pauseSheet.hidden=true;settingsSheet.hidden=true;resumeSheet.hidden=true;resultSheet.hidden=true;onlineSheet.hidden=true;if(GameState.phase==='PAUSED'){homeSheet.hidden=true;pauseSheet.hidden=false;busy=true;setDock('table');}else if(GameState.phase==='WON'||GameState.phase==='LOST'){homeSheet.hidden=true;showResult(GameState.phase);setDock('table');}else{const hasSave=GameState.tableRow.length>0||GameState.completedGroups.length>0||GameState.mode==='RACE'||GameState.mode==='ONLINE';document.getElementById('homeContinueButton').hidden=!hasSave;homeSheet.hidden=false;busy=true;setDock('home');}updateRaceHud();checkInviteUrlOnLoad();}).catch(()=>{initialState();syncMeshes();introSheet.hidden=true;featuresSheet.hidden=true;rulesSheet.hidden=true;pauseSheet.hidden=true;settingsSheet.hidden=true;resumeSheet.hidden=true;resultSheet.hidden=true;onlineSheet.hidden=true;document.getElementById('homeContinueButton').hidden=true;homeSheet.hidden=false;busy=true;setDock('home');updateRaceHud();checkInviteUrlOnLoad();});
   addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')save();});
-  addEventListener('pagehide',()=>save());
+  window.__SOLO_GAME__ = {
+    GameState,
+    GameEngine,
+    sendP2PAction,
+    createP2PRoom,
+    joinP2PRoom,
+    cleanupOnlineConnection,
+    handleLocalPlayerFinished,
+    getOnlineRoomCode: () => onlineRoomCode,
+    getOnlineConn: () => onlineConn,
+    getOnlinePeer: () => onlinePeer,
+    getOpponentState: () => opponentState
+  };
 })();

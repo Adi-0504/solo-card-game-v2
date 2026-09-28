@@ -1,3 +1,4 @@
+/** NOTE: Local development utility only. Production runs 100% on static GitHub Pages + WebRTC P2P DataChannel. */
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';

@@ -178,11 +178,12 @@
           <button class="primary-action" id="createOnlineRoomButton" type="button">建立房間</button>
           <div class="join-room-row"><input id="onlineRoomInput" inputmode="text" maxlength="6" placeholder="輸入房間代碼" aria-label="房間代碼" /><button class="secondary-action" id="joinOnlineRoomButton" type="button">加入</button></div>
         </div>
-        <p class="online-note" id="onlineConfigNote">尚未設定 WebSocket 伺服器。GitHub Pages 仍可使用本機模式。</p>
+        <p class="online-note" id="onlineConfigNote" hidden>使用 WebRTC P2P 直連，無需中央遊戲伺服器。</p>
         <button class="secondary-action" id="closeOnlineButton" type="button">返回</button>
       </div>
     </section>
   </main>
+  <script src="./peerjs.min.js"></script>
   <script src="./config.js"></script>
   <script src="./three.min.js"></script>
   <script src="./gsap.min.js"></script>

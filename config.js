@@ -1,8 +1,4 @@
-// Production WebSocket Server configuration
-// Set this to your deployed backend WebSocket URL (e.g. Render / Heroku / Fly.io / VPS)
+// Solo Card Game Configuration — GitHub Pages + WebRTC P2P
 window.SOLO_CARD_GAME_CONFIG = window.SOLO_CARD_GAME_CONFIG || {
-  wsUrl: 'wss://solo-card-game-backend.onrender.com/ws'
+  mode: 'p2p'
 };
-
-
-
